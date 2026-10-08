@@ -1,17 +1,25 @@
 # Python
-.venv/
 __pycache__/
 *.py[cod]
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Environment
+.env
+.env.*
 
 # macOS
 .DS_Store
 
 # IDE
 .idea/
+.vscode/
 *.iml
 
 # Jupyter
 .ipynb_checkpoints/
-
-# Environment / secrets
-.env

@@ -16,7 +16,9 @@ from scipy.signal import medfilt
 from scipy.spatial.distance import cdist
 from tqdm import tqdm
 
-import build_ddnet as ddnet    #  BUILD TRAIN MODEL
+import os
+from model import ddnet    #  BUILD TRAIN MODEL
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def data_generator_rt(T, C):
     X_0=[]
@@ -163,7 +165,7 @@ def GT1():
     C=ddnet.Config()
     DD_Net=ddnet.build_DD_Net(C)
     DD_Net.summary()
-    DD_Net.load_weights("trainModels.h5")
+    DD_Net.load_weights(os.path.join(BASE_DIR, "model/trainModels.h5"))
 
     #  10 CLASSES - 5 REAL [1, 3, 5, 6, 10] 
     labels=["xin chao rat vui duoc gap ban", "", "xin cam on ban that tot bung", "", "xin chao rat vui duoc gap ban",
@@ -228,23 +230,23 @@ def GT1():
                 #  MEDIA
                 # MEDIA
                 if np.argmax(res) == 0:
-                    samples1, samplerate1 = sf.read("media/output1.wav")
+                    samples1, samplerate1 = sf.read(os.path.join(BASE_DIR, "../media/output1.wav"))
                     default_speaker.play(samples1, samplerate=samplerate1)  # M1
 
                 if np.argmax(res) == 2:
-                    samples2, samplerate2 = sf.read("media/output2.wav")
+                    samples2, samplerate2 = sf.read(os.path.join(BASE_DIR, "../media/output2.wav"))
                     default_speaker.play(samples2, samplerate=samplerate2)  # M2
 
                 if np.argmax(res) == 4:
-                    samples4, samplerate4 = sf.read("media/output4.wav")
+                    samples4, samplerate4 = sf.read(os.path.join(BASE_DIR, "../media/output4.wav"))
                     default_speaker.play(samples4, samplerate=samplerate4)  # M4
 
                 if np.argmax(res) == 5:
-                    samples5, samplerate5 = sf.read("media/output5.wav")
+                    samples5, samplerate5 = sf.read(os.path.join(BASE_DIR, "../media/output5.wav"))
                     default_speaker.play(samples5, samplerate=samplerate5)  # M5
 
                 if np.argmax(res) == 9:
-                    samples6, samplerate6 = sf.read("media/output6.wav")
+                    samples6, samplerate6 = sf.read(os.path.join(BASE_DIR, "../media/output6.wav"))
                     default_speaker.play(samples6, samplerate=samplerate6)  # M9
                 sentence.append(labels[np.argmax(res)])
                 sequence.clear()
