@@ -1,296 +1,216 @@
-from importlib import readers
-import random
-import time 
-from tkinter import *    #  TINKER PY
+"""
+main.py — Speaking Hands VSL entry point.
 
-import soundfile as sf    #  LIB FILE AUDIO
-import soundcard as sc    #  LIB CARD AUDIO
+Coordinates:
+    Camera (OpenCV)
+        ↓
+    PoseService (MediaPipe)
+        ↓
+    RecognitionService (DD-Net)
+        ↓
+    AudioService (SoundCard / SoundFile)
 
-import cv2    # LIB OPENCV
-import mediapipe as mp    #  SETUP CAM
-import numpy as np
+Run from backend/:
+    source ../.venv/bin/activate
+    python app/main.py
+"""
 
-import scipy.ndimage.interpolation as inter 
-from pyparsing import results
-from scipy.signal import medfilt
-from scipy.spatial.distance import cdist
-from tqdm import tqdm
-
+import sys
 import os
-from model import ddnet    #  BUILD TRAIN MODEL
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-def data_generator_rt(T, C):
-    X_0=[]
-    X_1=[]
+# Tắt log từ abseil/TensorFlow
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["GLOG_minloglevel"] = "2"
 
-    T=np.expand_dims(T, axis=0)
-    for i in tqdm(range(len(T))):
-        p=np.copy(T[i])
-        p=zoom(p, target_l=C.frame_l, joints_num=C.joint_n, joints_dim=C.joint_d)
+import time
 
-        M=get_CG(p, C)
+# Ensure the 'app/' directory is on sys.path so that
+# 'from model import ddnet' resolves correctly regardless of cwd.
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+if APP_DIR not in sys.path:
+    sys.path.insert(0, APP_DIR)
 
-        X_0.append(M)
-        p=norm_train2d(p)
+import cv2
+from tkinter import *
 
-        X_1.append(p)
-
-    X_0=np.stack(X_0)
-    X_1=np.stack(X_1)
-
-    return X_0, X_1
+from services.pose_service import PoseService
+from services.recognition_service import RecognitionService
+from services.audio_service import AudioService
 
 
-#  CACULATE FEATURES
-def zoom(p, target_l=32, joints_num=20, joints_dim=3):
-    l=p.shape[0]
-    p_new=np.empty([target_l, joints_num, joints_dim])
-
-    for m in range(joints_num):
-        for n in range(joints_dim):
-            p[:, m, n]=medfilt(p[:, m, n], 3)
-            p_new[:, m, n]=inter.zoom(p[:, m, n], target_l / l)[:target_l]
-
-    return p_new
-
-
-def sampling_frame(p, C):
-    full_l=p.shape[0]    #  FULL LENGTH
-
-    if random.uniform(0, 1) < 0.5:    #  ALIGMENT SAMPLING
-        valid_l=np.round(np.random.uniform(0.9, 1) * full_l)
-        s=random.randint(0, full_l - int(valid_l))
-        e=s + valid_l    #  SAMPLE END POINT
-        p=p[int(s) : int(e), :, :]
-
-    else:    #  WITHOUT ALIGMENT SAMPLING
-        valid_l=np.round(np.random.uniform(0.9, 1) * full_l)
-        index=np.sort(np.random.choice(range(0, full_l), int(valid_l), replace=False))
-        p=p[index, :, :]
-
-    p=zoom(p, C.frame_l, C.joint_n, C.joint_d)
-    return p
-
-
-def get_CG(p, C):
-    M=[]
-    iu=np.triu_indices(C.joint_n, 1, C.joint_n)
-    for f in range(C.frame_l):
-        
-        #  DISTANCE MAX
-        d_m=cdist(p[f], np.concatenate([p[f], np.zeros([1, C.joint_d])]), "euclidean")
-        d_m=d_m[iu]
-
-        M.append(d_m)
-
-    M=np.stack(M)
-    return M
-
-
-def norm_train(p):
-    #  sNORMALIZE TO START POINT USE THE CENTER FOR HAND CASE
-    p[:, :, 0]=p[:, :, 0] - np.mean(p[:, :, 0])
-    p[:, :, 1]=p[:, :, 1] - np.mean(p[:, :, 1])
-    p[:, :, 2]=p[:, :, 2] - np.mean(p[:, :, 2])
-    return p
-
-
-def norm_train2d(p):
-    p[:, :, 0]=p[:, :, 0] - np.mean(p[:, :, 0])
-    p[:, :, 1]=p[:, :, 1] - np.mean(p[:, :, 1])
-    return p
-
-
-#  FRONTEND
-window=Tk()
+# ---------------------------------------------------------------------------
+# Tkinter GUI setup
+# ---------------------------------------------------------------------------
+window = Tk()
 window.title("Vietnamese Sign Language Interpreter")
 window.geometry("1020x600")
-# window.attributes("-topmost", True)
-window["bg"]="#e0ffff"
+window["bg"] = "#e0ffff"
 
-label_text=Label(window,
-                   text="  Phiên dịch ngôn ngữ kí hiệu                                                                ",
-                   bg="#708090",
-                   fg="#fffafa",
-                   font=("Time New Roman", 30))
+label_text = Label(
+    window,
+    text="  Phiên dịch ngôn ngữ kí hiệu                                                                ",
+    bg="#708090",
+    fg="#fffafa",
+    font=("Time New Roman", 30),
+)
 label_text.place(x=0, y=0)
 
-label_text1=Label(window,
-                    text="                                                                                            ",
-                    bg="#4682b4",
-                    font=("Time New Roman", 70))
+label_text1 = Label(
+    window,
+    text="                                                                                            ",
+    bg="#4682b4",
+    font=("Time New Roman", 70),
+)
 label_text1.place(x=0, y=48)
 
-label_text2=Label(window,
-                    text="                                                                                            ",
-                    bg="#d3d3d3",
-                    font=("Time New Roman", 40))
+label_text2 = Label(
+    window,
+    text="                                                                                            ",
+    bg="#d3d3d3",
+    font=("Time New Roman", 40),
+)
 label_text2.place(x=0, y=158)
 
-label_text2=Label(window,
-                    text="                                                                                            ",
-                    bg="#4682b4",
-                    font=("Time New Roman", 100))
+label_text2 = Label(
+    window,
+    text="                                                                                            ",
+    bg="#4682b4",
+    font=("Time New Roman", 100),
+)
 label_text2.place(x=200, y=280)
 
-label_text3=Label(window, text="    ",
-                    bg="#4682b4",
-                    font=("Time New Roman", 18))
+label_text3 = Label(window, text="    ", bg="#4682b4", font=("Time New Roman", 18))
 label_text3.place(x=0, y=260)
-
-label_text4=Label(window, text="    ",
-                    bg="#4682b4",
-                    font=("Time New Roman", 18))
+label_text4 = Label(window, text="    ", bg="#4682b4", font=("Time New Roman", 18))
 label_text4.place(x=0, y=300)
-
-label_text5=Label(window, text="    ",
-                    bg="#4682b4",
-                    font=("Time New Roman", 18))
+label_text5 = Label(window, text="    ", bg="#4682b4", font=("Time New Roman", 18))
 label_text5.place(x=0, y=340)
-
-label_text6=Label(window, text="    ",
-                    bg="#4682b4",
-                    font=("Time New Roman", 18))
+label_text6 = Label(window, text="    ", bg="#4682b4", font=("Time New Roman", 18))
 label_text6.place(x=0, y=380)
-
-label_text7=Label(window, text="    ",
-                    bg="#4682b4",
-                    font=("Time New Roman", 18))
+label_text7 = Label(window, text="    ", bg="#4682b4", font=("Time New Roman", 18))
 label_text7.place(x=0, y=420)
 
 
+# ---------------------------------------------------------------------------
+# Model 1 — real-time sign language recognition
+# ---------------------------------------------------------------------------
 def GT1():
-    #  BUILD DD-NET MODEL
-    C=ddnet.Config()
-    DD_Net=ddnet.build_DD_Net(C)
-    DD_Net.summary()
-    DD_Net.load_weights(os.path.join(BASE_DIR, "model/trainModels.h5"))
+    pose_service = PoseService()
+    recognition_service = RecognitionService()
+    audio_service = AudioService()
 
-    #  10 CLASSES - 5 REAL [1, 3, 5, 6, 10] 
-    labels=["xin chao rat vui duoc gap ban", "", "xin cam on ban that tot bung", "", "xin chao rat vui duoc gap ban",
-              "toi la nguoi diec", "", "", "", "toi la nguoi diec"]
+    sequence = []
+    sentence = [""]
+    time0 = 0
 
-    #  COLOR TEXT
-    colors=[(245, 117, 16), (117, 245, 16), (16, 117, 245)]
-
-    #  DEFINE MEDIAPIPE SOLUTIONS
-    mp_drawing=mp.solutions.drawing_utils
-    mp_drawing_styles=mp.solutions.drawing_styles
-    mp_pose=mp.solutions.pose
-
-    time0=0
-    sequence=[]
-    sentence=['']
-    predictions=[]
-    threshold=0.6
-
-    default_speaker=sc.default_speaker()
-    
-    #  ACCESS WEBCAM OPENCV
-    cap=cv2.VideoCapture(0)
-    with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
+    cap = cv2.VideoCapture(0)
+    try:
         while cap.isOpened():
-            success, image=cap.read()
+            success, frame = cap.read()
+            if not success:
+                break
 
-            #  FLIP THE IMG HORIZONTALLY FOR A SELFIE-VIEW DISPLAY
-            image=cv2.flip(image, 1)
+            # Flip for selfie-view
+            frame = cv2.flip(frame, 1)
 
-            #  TO IMPROVE PERFORMANCE, OPTIONALLY MARK THE IMG AS NOT WRITEABLE TO PASS BY REFERENCE
-            image.flags.writeable = False
-            image=cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            results=pose.process(image)
+            # Pose landmark extraction
+            annotated_frame, keypoint = pose_service.process_frame(frame)
 
-            #  DRAW THE POSE ANNOTATION ON THE IMG
-            image.flags.writeable=True
-            image=cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-            mp_drawing.draw_landmarks(
-                image,
-                results.pose_landmarks,
-                mp_pose.POSE_CONNECTIONS,
-                landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style()
-            )
-
-            if results.pose_landmarks:
-                keypoint=np.array([[res.x, res.y] for res in results.pose_landmarks.landmark]).flatten()
-                keypoint=np.array_split(keypoint, 33)
-                # print(keypoint)
+            if keypoint is not None:
                 sequence.append(keypoint)
-                # print(sequence)
-                sequence=sequence[-120:]
+                sequence = sequence[-120:]
 
+            # Run inference when enough frames are buffered
             if len(sequence) == 120:
-                # print(sequence)
-                X_test_rt_1, X_test_rt_2=data_generator_rt(sequence[-100:], C)
-                res=DD_Net.predict([X_test_rt_1, X_test_rt_2])[0]
-
-                # print(labels[np.argmax(res)])
-                # print(np.argmax[res])
-
-                #  MEDIA
-                # MEDIA
-                if np.argmax(res) == 0:
-                    samples1, samplerate1 = sf.read(os.path.join(BASE_DIR, "../media/output1.wav"))
-                    default_speaker.play(samples1, samplerate=samplerate1)  # M1
-
-                if np.argmax(res) == 2:
-                    samples2, samplerate2 = sf.read(os.path.join(BASE_DIR, "../media/output2.wav"))
-                    default_speaker.play(samples2, samplerate=samplerate2)  # M2
-
-                if np.argmax(res) == 4:
-                    samples4, samplerate4 = sf.read(os.path.join(BASE_DIR, "../media/output4.wav"))
-                    default_speaker.play(samples4, samplerate=samplerate4)  # M4
-
-                if np.argmax(res) == 5:
-                    samples5, samplerate5 = sf.read(os.path.join(BASE_DIR, "../media/output5.wav"))
-                    default_speaker.play(samples5, samplerate=samplerate5)  # M5
-
-                if np.argmax(res) == 9:
-                    samples6, samplerate6 = sf.read(os.path.join(BASE_DIR, "../media/output6.wav"))
-                    default_speaker.play(samples6, samplerate=samplerate6)  # M9
-                sentence.append(labels[np.argmax(res)])
+                label, confidence, class_idx = recognition_service.predict(sequence[-100:])
+                audio_service.play(class_idx)
+                sentence.append(label)
                 sequence.clear()
                 print(sentence)
 
-            #  SHOW FPS
-            time1=time.time()
-            fps=1/(time1-time0)
-            time0=time1
+            # FPS overlay
+            time1 = time.time()
+            if time0 > 0:
+                fps = 1 / (time1 - time0)
+                cv2.putText(
+                    annotated_frame,
+                    "FPS:" + str(int(fps)),
+                    (3, 475),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    (255, 255, 255),
+                    2,
+                    cv2.LINE_AA,
+                )
+            time0 = time1
 
-            cv2.putText(image, "FPS:" + str(int(fps)), (3, 475), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-            cv2.rectangle(image, (0, 0), (640, 40), (245, 117, 16), -1)
-            cv2.putText(image, ''.join(sentence[-1:]), (3, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-            cv2.imshow('Vietnamese Sign Language', image)
+            # Prediction overlay
+            cv2.rectangle(annotated_frame, (0, 0), (640, 40), (245, 117, 16), -1)
+            cv2.putText(
+                annotated_frame,
+                "".join(sentence[-1:]),
+                (3, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
+            cv2.imshow("Vietnamese Sign Language", annotated_frame)
 
-            if cv2.waitKey(5) & 0xFF == ord('q'):
+            if cv2.waitKey(5) & 0xFF == ord("q"):
                 break
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+        pose_service.close()
 
-    cap.release()
-    cv2.destroyAllWindows()
-    return
 
-
+# ---------------------------------------------------------------------------
+# Model 2 — text input / display utility
+# ---------------------------------------------------------------------------
 def GT2():
-    label_text=Label(window, text="", fg="white", bg="#4682b4", font=("Time New Roman", 30))
+    label_text = Label(window, text="", fg="white", bg="#4682b4", font=("Time New Roman", 30))
     label_text.place(x=200, y=300)
 
-    t2t=Entry(window, width=40)
+    t2t = Entry(window, width=40)
     t2t.place(x=500, y=66)
 
     def handleButtonCon():
         label_text.configure(text="" + t2t.get())
-        return
 
-    btnCon=Button(window, text='Hoạt động', bg="#696969", fg="#e6e6fa", font=("Time New Roman", 12),
-                    command=handleButtonCon)
+    btnCon = Button(
+        window,
+        text="Hoạt động",
+        bg="#696969",
+        fg="#e6e6fa",
+        font=("Time New Roman", 12),
+        command=handleButtonCon,
+    )
     btnCon.place(x=750, y=60)
-    return
 
 
-btnCon1=Button(window, text="Model 1", bg="#696969", fg="#e6e6fa", font=("Time New Roman", 18), command=GT1)
+# ---------------------------------------------------------------------------
+# Buttons
+# ---------------------------------------------------------------------------
+btnCon1 = Button(
+    window,
+    text="Model 1",
+    bg="#696969",
+    fg="#e6e6fa",
+    font=("Time New Roman", 18),
+    command=GT1,
+)
 btnCon1.place(x=10, y=168)
 
-btnCon2=Button(window, text="Model 2", bg="#696969", fg="#e6e6fa", font=("Time New Roman", 18), command=GT2)
+btnCon2 = Button(
+    window,
+    text="Model 2",
+    bg="#696969",
+    fg="#e6e6fa",
+    font=("Time New Roman", 18),
+    command=GT2,
+)
 btnCon2.place(x=180, y=168)
 
 window.mainloop()
