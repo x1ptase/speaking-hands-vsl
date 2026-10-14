@@ -5,6 +5,7 @@ import { Button } from '../common/Button';
 import { ConfidenceBar } from './ConfidenceBar';
 import type { RecognitionResponse } from '../../services/recognitionService';
 import { confidenceToPercent } from '../../utils/confidence';
+import { CONFIRM_COUNT, MIN_CONFIDENCE, type PredictionNote } from '../../utils/predictionGate';
 
 export type PanelStage = 'idle' | 'selected' | 'loading' | 'detecting' | 'collecting' | 'ready' | 'recognizing' | 'done' | 'error';
 
@@ -27,6 +28,10 @@ interface RecognitionPanelProps {
   progress?: { current: number; total: number } | null;
   result: RecognitionResponse | null;
   error?: string | null;
+  /** Live-mode gate feedback; the confirmed result above is never replaced by an uncertain prediction. */
+  note?: PredictionNote;
+  latest?: RecognitionResponse | null;
+  pendingCount?: number;
   emptyHint: string;
   /** Resets the displayed result and error. The button is hidden when omitted or when there is nothing to clear. */
   onClear?: () => void;
@@ -38,6 +43,9 @@ export const RecognitionPanel: React.FC<RecognitionPanelProps> = ({
   progress,
   result,
   error,
+  note = null,
+  latest = null,
+  pendingCount = 0,
   emptyHint,
   onClear,
 }) => {
@@ -45,8 +53,9 @@ export const RecognitionPanel: React.FC<RecognitionPanelProps> = ({
   const percent = result ? confidenceToPercent(result.confidence) : null;
   const hasLabel = Boolean(result?.label?.trim());
   const working = stage === 'loading' || stage === 'recognizing';
-  // A new request must not blank out the previous prediction; only show the big spinner when there is none.
-  const showSpinner = working && !result;
+  // Only long waits (model load, manual upload) get the big spinner. Live "recognizing" is a short, repeating
+  // state, so it is shown in the status line instead; otherwise the box would flash on every request.
+  const showSpinner = stage === 'loading' && !result;
   const showProgress = stage === 'collecting' && progress;
 
   const renderResult = () => {
@@ -100,6 +109,20 @@ export const RecognitionPanel: React.FC<RecognitionPanelProps> = ({
           >
             {renderResult()}
           </div>
+
+          {(note || pendingCount > 0) && (
+            <p role="status" className={`mb-4 rounded-lg border px-3 py-2 text-sm ${note ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-border-subtle bg-gray-50 text-secondary-text'}`}>
+              {note === 'uncertain' && (
+                <>
+                  <span className="font-semibold">Uncertain</span>
+                  {latest && ` · ${confidenceToPercent(latest.confidence)}% < ${Math.round(MIN_CONFIDENCE * 100)}%`}
+                  {result && ' · giữ kết quả đã xác nhận'}
+                </>
+              )}
+              {note === 'unsupported' && 'Ký hiệu chưa được hỗ trợ'}
+              {!note && `Đang xác nhận ký hiệu mới: ${pendingCount}/${CONFIRM_COUNT}`}
+            </p>
+          )}
 
           {result && !showSpinner && (
             <>

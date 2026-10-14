@@ -39,7 +39,7 @@ export const Recognition: React.FC = () => {
   const live = useLiveRecognition(camera.videoRef, camera.status === 'running', drawLandmarks);
   const cameraActive = camera.status === 'running';
 
-  const liveStatus = {
+  const phaseStatus = {
     off: 'Waiting for camera',
     loading: 'Loading pose model...',
     detecting: 'Detecting pose...',
@@ -48,6 +48,8 @@ export const Recognition: React.FC = () => {
     recognizing: 'Recognizing...',
     error: 'Error',
   }[live.phase];
+  // The panel keeps the last confirmed label; the status line tells the user the newest prediction was not trusted.
+  const liveStatus = live.note === 'uncertain' && live.phase === 'ready' ? 'Uncertain' : phaseStatus;
   const liveDot = ({
     off: 'bg-gray-300',
     loading: 'bg-yellow-400',
@@ -85,6 +87,9 @@ export const Recognition: React.FC = () => {
               progress={{ current: live.frameCount, total: SEQUENCE_LENGTH }}
               result={live.result}
               error={live.error}
+              note={live.note}
+              latest={live.latest}
+              pendingCount={live.pendingCount}
               emptyHint="Đứng trước camera và thực hiện ký hiệu để nhận diện."
               onClear={live.clearResult}
             />

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 import { ApiError } from '../services/apiClient';
 import { isRecognitionResponse, predictSequence, type RecognitionResponse } from '../services/recognitionService';
+import { PredictionGate, type PredictionNote } from '../utils/predictionGate';
 import { FrameBuffer, SEQUENCE_LENGTH, toFrame } from '../utils/poseLandmarks';
 import type { Frame } from '../services/recognitionService';
 
@@ -11,7 +12,7 @@ import type { Frame } from '../services/recognitionService';
  */
 const SAMPLE_INTERVAL_MS = 100;
 /** Minimum time between prediction requests once the buffer is full (and after a failure). */
-const PREDICT_INTERVAL_MS = 1000;
+const PREDICT_INTERVAL_MS = 500;
 const ERROR_RETRY_INTERVAL_MS = 3000;
 /** First request can be slow while the backend lazily loads TensorFlow and the model. */
 const REQUEST_TIMEOUT_MS = 30000;
@@ -27,13 +28,28 @@ export type LivePhase = 'off' | 'loading' | 'detecting' | 'collecting' | 'ready'
 export interface LiveRecognitionState {
   phase: LivePhase;
   frameCount: number;
+  /** Last confirmed prediction (see PredictionGate); never replaced by uncertain or unsupported ones. */
   result: RecognitionResponse | null;
+  /** Most recent raw backend response, for the Uncertain indicator. */
+  latest: RecognitionResponse | null;
+  note: PredictionNote;
+  /** Consecutive confident predictions of a not-yet-confirmed label. */
+  pendingCount: number;
   /** Last failure; cleared by the next successful prediction. */
   error: string | null;
   latencyMs: number | null;
 }
 
-const INITIAL_STATE: LiveRecognitionState = { phase: 'off', frameCount: 0, result: null, error: null, latencyMs: null };
+const INITIAL_STATE: LiveRecognitionState = {
+  phase: 'off',
+  frameCount: 0,
+  result: null,
+  latest: null,
+  note: null,
+  pendingCount: 0,
+  error: null,
+  latencyMs: null,
+};
 
 function describeRequestError(e: unknown): string {
   if (e instanceof DOMException && e.name === 'TimeoutError') return 'Backend phản hồi quá lâu. Đang thử lại...';
@@ -66,14 +82,23 @@ export function useLiveRecognition(
     onLandmarksRef.current = onLandmarks;
   }, [onLandmarks]);
 
+  const gateRef = useRef(new PredictionGate());
+  /** Bumped whenever the gate is reset; a response requested under an older generation is stale and dropped. */
+  const generationRef = useRef(0);
+
   /** Hides the last prediction/error; the buffer and loops keep running and the next response shows normally. */
   const clearResult = useCallback(() => {
-    setState((prev) => ({ ...prev, result: null, error: null, latencyMs: null }));
+    gateRef.current.reset();
+    generationRef.current += 1;
+    setState((prev) => ({ ...prev, result: null, latest: null, note: null, pendingCount: 0, error: null, latencyMs: null }));
   }, []);
 
   useEffect(() => {
     if (!enabled) return;
 
+    const gate = gateRef.current;
+    gate.reset();
+    generationRef.current += 1;
     let cancelled = false;
     let rafId: number | null = null;
     let landmarker: PoseLandmarker | null = null;
@@ -106,14 +131,23 @@ export function useLiveRecognition(
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
       patch({ phase: 'recognizing' });
       const startedAt = performance.now();
+      const generation = generationRef.current;
       try {
         const response = await predictSequence(buffer.snapshot(), signal);
-        if (cancelled) return;
+        if (cancelled || generation !== generationRef.current) return;
         if (!isRecognitionResponse(response)) throw new ApiError('Backend trả về dữ liệu không hợp lệ.');
         nextPredictDelay = PREDICT_INTERVAL_MS;
-        patch({ result: response, error: null, latencyMs: Math.round(performance.now() - startedAt) });
+        const decision = gate.update(response);
+        patch({
+          ...(decision.confirmed ? { result: decision.confirmed } : {}),
+          latest: response,
+          note: decision.note,
+          pendingCount: decision.pendingCount,
+          error: null,
+          latencyMs: Math.round(performance.now() - startedAt),
+        });
       } catch (e) {
-        if (cancelled || (e instanceof DOMException && e.name === 'AbortError')) return;
+        if (cancelled || generation !== generationRef.current || (e instanceof DOMException && e.name === 'AbortError')) return;
         nextPredictDelay = ERROR_RETRY_INTERVAL_MS;
         // Keep the previous result visible; only surface the error.
         patch({ error: describeRequestError(e) });
@@ -192,6 +226,8 @@ export function useLiveRecognition(
 
     return () => {
       cancelled = true;
+      gate.reset();
+      generationRef.current += 1;
       onLandmarksRef.current?.(null);
       if (rafId !== null) cancelAnimationFrame(rafId);
       requestController?.abort();
