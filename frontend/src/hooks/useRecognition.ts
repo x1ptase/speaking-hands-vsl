@@ -61,5 +61,14 @@ export function useRecognition() {
     }
   }, [file, status]);
 
-  return { file, status, result, error, latencyMs, history, selectFile, submit };
+  /** Clears the shown result/error but keeps the selected file so it can be submitted again. */
+  const reset = useCallback(() => {
+    if (status === 'loading') return;
+    setResult(null);
+    setError(null);
+    setLatencyMs(null);
+    setStatus(file ? 'selected' : 'idle');
+  }, [file, status]);
+
+  return { file, status, result, error, latencyMs, history, selectFile, submit, reset };
 }

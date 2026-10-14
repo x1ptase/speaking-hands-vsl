@@ -6,6 +6,9 @@ import type { CameraStatus } from '../../hooks/useCamera';
 interface StatusBarProps {
   cameraStatus: CameraStatus;
   status: RecognitionStatus;
+  /** Live recognition status text while the camera is on; overrides the manual-upload model status. */
+  liveStatus: string | null;
+  liveDot: string;
   frameCount: number | null;
   latencyMs: number | null;
 }
@@ -25,7 +28,7 @@ const MODEL_STATUS: Record<RecognitionStatus, { text: string; dot: string }> = {
   error: { text: 'Error', dot: 'bg-red-500' },
 };
 
-export const StatusBar: React.FC<StatusBarProps> = ({ cameraStatus, status, frameCount, latencyMs }) => {
+export const StatusBar: React.FC<StatusBarProps> = ({ cameraStatus, status, liveStatus, liveDot, frameCount, latencyMs }) => {
   const camera = CAMERA_STATUS[cameraStatus];
   const model = MODEL_STATUS[status];
 
@@ -46,8 +49,8 @@ export const StatusBar: React.FC<StatusBarProps> = ({ cameraStatus, status, fram
         <Cpu className="w-4 h-4 text-secondary-text" />
         <span className="text-sm font-medium text-main-text">Model</span>
         <span className="flex items-center gap-1.5 ml-1">
-          <span className={`w-2 h-2 rounded-full ${model.dot}`}></span>
-          <span className="text-xs text-secondary-text">{model.text}</span>
+          <span className={`w-2 h-2 rounded-full ${liveStatus ? liveDot : model.dot}`}></span>
+          <span className="text-xs text-secondary-text">{liveStatus ?? model.text}</span>
         </span>
       </div>
 

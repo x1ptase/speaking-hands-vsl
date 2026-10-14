@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { captureFrame } from '../utils/frameCapture';
 
 export type CameraStatus = 'idle' | 'starting' | 'running' | 'error';
 
 export interface UseCameraOptions {
-  /** Frames captured per second while the camera is running. */
-  captureFps?: number;
-  /** Maximum number of captured frames kept in memory (oldest are dropped). */
-  maxBufferSize?: number;
   width?: number;
   height?: number;
 }
@@ -37,12 +32,9 @@ function describeCameraError(error: unknown): string {
   }
 }
 
-export function useCamera({ captureFps = 5, maxBufferSize = 5, width = 640, height = 480 }: UseCameraOptions = {}) {
+export function useCamera({ width = 640, height = 480 }: UseCameraOptions = {}) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const rafRef = useRef<number | null>(null);
-  const bufferRef = useRef<ImageData[]>([]);
   // Incremented by every start/stop so that a slow getUserMedia() result can detect it is stale.
   const sessionRef = useRef(0);
 
@@ -50,57 +42,22 @@ export function useCamera({ captureFps = 5, maxBufferSize = 5, width = 640, heig
   const [error, setError] = useState<string | null>(null);
   const [devices, setDevices] = useState<CameraDevice[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
-  const [capturedCount, setCapturedCount] = useState(0);
-
-  // Keep the latest capture settings readable from the long-lived rAF loop without restarting it.
-  const settingsRef = useRef({ captureFps, maxBufferSize });
-  useEffect(() => {
-    settingsRef.current = { captureFps, maxBufferSize };
-  }, [captureFps, maxBufferSize]);
 
   const releaseResources = useCallback(() => {
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
     streamRef.current?.getTracks().forEach((track) => {
       track.onended = null;
       track.stop();
     });
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
-    bufferRef.current = [];
   }, []);
 
   const stop = useCallback(() => {
     sessionRef.current += 1;
     releaseResources();
-    setCapturedCount(0);
     setError(null);
     setStatus('idle');
   }, [releaseResources]);
-
-  const startCaptureLoop = useCallback((session: number) => {
-    let lastCapture = 0;
-    const tick = (now: number) => {
-      if (session !== sessionRef.current) return;
-      const video = videoRef.current;
-      const { captureFps: fps, maxBufferSize: maxSize } = settingsRef.current;
-      if (video && now - lastCapture >= 1000 / fps) {
-        canvasRef.current ??= document.createElement('canvas');
-        const frame = captureFrame(video, canvasRef.current);
-        if (frame) {
-          lastCapture = now;
-          const buffer = bufferRef.current;
-          buffer.push(frame);
-          if (buffer.length > maxSize) buffer.splice(0, buffer.length - maxSize);
-          setCapturedCount((count) => count + 1);
-        }
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-  }, []);
 
   const start = useCallback(
     async (deviceId?: string) => {
@@ -113,8 +70,7 @@ export function useCamera({ captureFps = 5, maxBufferSize = 5, width = 640, heig
       sessionRef.current += 1;
       const session = sessionRef.current;
       releaseResources();
-      setCapturedCount(0);
-      setError(null);
+        setError(null);
       setStatus('starting');
 
       try {
@@ -167,7 +123,6 @@ export function useCamera({ captureFps = 5, maxBufferSize = 5, width = 640, heig
         setSelectedDeviceId(track.getSettings().deviceId ?? deviceId ?? '');
 
         setStatus('running');
-        startCaptureLoop(session);
       } catch (e) {
         if (session !== sessionRef.current) return;
         sessionRef.current += 1;
@@ -176,7 +131,7 @@ export function useCamera({ captureFps = 5, maxBufferSize = 5, width = 640, heig
         setError(describeCameraError(e));
       }
     },
-    [width, height, releaseResources, startCaptureLoop],
+    [width, height, releaseResources],
   );
 
   const switchDevice = useCallback(
@@ -186,8 +141,6 @@ export function useCamera({ captureFps = 5, maxBufferSize = 5, width = 640, heig
     },
     [start],
   );
-
-  const getBufferedFrames = useCallback((): readonly ImageData[] => bufferRef.current, []);
 
   // Never leave the camera running after the component unmounts.
   useEffect(
@@ -204,11 +157,8 @@ export function useCamera({ captureFps = 5, maxBufferSize = 5, width = 640, heig
     error,
     devices,
     selectedDeviceId,
-    capturedCount,
-    captureFps,
     start: () => start(selectedDeviceId || undefined),
     stop,
     switchDevice,
-    getBufferedFrames,
   };
 }

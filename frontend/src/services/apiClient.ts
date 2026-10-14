@@ -26,15 +26,18 @@ function formatDetail(detail: unknown): string | null {
   return null;
 }
 
-export async function postJson<TResponse>(path: string, body: unknown): Promise<TResponse> {
+export async function postJson<TResponse>(path: string, body: unknown, signal?: AbortSignal): Promise<TResponse> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal,
     });
-  } catch {
+  } catch (e) {
+    // Caller-initiated aborts and timeouts are surfaced as-is so the caller can tell them apart from network errors.
+    if (e instanceof DOMException && (e.name === 'AbortError' || e.name === 'TimeoutError')) throw e;
     throw new ApiError(`Không kết nối được tới backend (${API_BASE_URL}). Hãy kiểm tra backend đã chạy và cấu hình CORS.`);
   }
 
