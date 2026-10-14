@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { SectionTitle } from '../components/common/SectionTitle';
+import type { PoseOverlayHandle } from '../components/recognition/PoseOverlay';
 import { CameraPreview } from '../components/recognition/CameraPreview';
 import { SequenceUpload } from '../components/recognition/SequenceUpload';
 import { RecognitionPanel, type PanelStage } from '../components/recognition/RecognitionPanel';
@@ -8,6 +9,7 @@ import { RecognitionHistory } from '../components/recognition/RecognitionHistory
 import { useRecognition, type RecognitionStatus } from '../hooks/useRecognition';
 import { useCamera } from '../hooks/useCamera';
 import { useLiveRecognition, type LivePhase } from '../hooks/useLiveRecognition';
+import type { Frame } from '../services/recognitionService';
 import { SEQUENCE_LENGTH } from '../utils/poseLandmarks';
 
 const MANUAL_STAGE: Record<RecognitionStatus, { stage: PanelStage; text: string }> = {
@@ -31,7 +33,10 @@ const LIVE_STAGE: Record<LivePhase, PanelStage> = {
 export const Recognition: React.FC = () => {
   const { file, status, result, error, latencyMs, history, selectFile, submit, reset } = useRecognition();
   const camera = useCamera();
-  const live = useLiveRecognition(camera.videoRef, camera.status === 'running');
+  const overlayRef = useRef<PoseOverlayHandle>(null);
+  const [showLandmarks, setShowLandmarks] = useState(true);
+  const drawLandmarks = useCallback((frame: Frame | null) => overlayRef.current?.draw(frame), []);
+  const live = useLiveRecognition(camera.videoRef, camera.status === 'running', drawLandmarks);
   const cameraActive = camera.status === 'running';
 
   const liveStatus = {
@@ -63,7 +68,14 @@ export const Recognition: React.FC = () => {
       {/* DOM order = mobile order: camera, then the result right below it, then manual upload. */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-6">
         <div className="lg:col-span-2">
-          <CameraPreview camera={camera} liveStatus={liveStatus} liveDot={liveDot} />
+          <CameraPreview
+            camera={camera}
+            liveStatus={liveStatus}
+            liveDot={liveDot}
+            overlayRef={overlayRef}
+            showLandmarks={showLandmarks}
+            onShowLandmarksChange={setShowLandmarks}
+          />
         </div>
         <div className="lg:col-span-1 lg:row-span-2">
           {cameraActive ? (

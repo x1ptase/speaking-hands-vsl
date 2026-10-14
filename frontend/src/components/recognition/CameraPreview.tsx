@@ -3,6 +3,7 @@ import { Camera, CameraOff, Loader2, AlertCircle, ShieldCheck } from 'lucide-rea
 import { Card } from '../common/Card';
 import { Button } from '../common/Button';
 import type { useCamera } from '../../hooks/useCamera';
+import { PoseOverlay, type PoseOverlayHandle } from './PoseOverlay';
 
 interface CameraPreviewProps {
   camera: ReturnType<typeof useCamera>;
@@ -10,9 +11,12 @@ interface CameraPreviewProps {
   liveStatus: string;
   /** Tailwind background class for the status dot on the video overlay. */
   liveDot: string;
+  overlayRef: React.Ref<PoseOverlayHandle>;
+  showLandmarks: boolean;
+  onShowLandmarksChange: (show: boolean) => void;
 }
 
-export const CameraPreview: React.FC<CameraPreviewProps> = ({ camera, liveStatus, liveDot }) => {
+export const CameraPreview: React.FC<CameraPreviewProps> = ({ camera, liveStatus, liveDot, overlayRef, showLandmarks, onShowLandmarksChange }) => {
   const { videoRef, status, error, devices, selectedDeviceId, start, stop, switchDevice } = camera;
 
   const isRunning = status === 'running';
@@ -29,6 +33,8 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ camera, liveStatus
           aria-label="Live camera preview"
           className={`absolute inset-0 w-full h-full object-contain bg-black -scale-x-100 ${isRunning ? '' : 'hidden'}`}
         />
+
+        <PoseOverlay ref={overlayRef} videoRef={videoRef} visible={isRunning && showLandmarks} />
 
         {isRunning && (
           <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">
@@ -89,6 +95,16 @@ export const CameraPreview: React.FC<CameraPreviewProps> = ({ camera, liveStatus
               ))}
             </select>
           )}
+
+          <label className="flex items-center gap-2 text-sm text-main-text cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showLandmarks}
+              onChange={(e) => onShowLandmarksChange(e.target.checked)}
+              className="h-4 w-4 rounded border-border-subtle accent-primary focus-visible:ring-2 focus-visible:ring-primary"
+            />
+            Show landmarks
+          </label>
 
           <div className="sm:ml-auto flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-secondary-text font-mono">
             <span>Camera: {status}</span>

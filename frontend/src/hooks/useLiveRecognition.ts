@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 import { ApiError } from '../services/apiClient';
 import { isRecognitionResponse, predictSequence, type RecognitionResponse } from '../services/recognitionService';
 import { FrameBuffer, SEQUENCE_LENGTH, toFrame } from '../utils/poseLandmarks';
+import type { Frame } from '../services/recognitionService';
 
 /**
  * Landmark sampling rate. The legacy desktop flow predicted on ~100 webcam frames (~3 s at 30 fps) that the
@@ -48,6 +49,8 @@ function describeRequestError(e: unknown): string {
 export function useLiveRecognition(
   videoRef: RefObject<HTMLVideoElement | null>,
   enabled: boolean,
+  /** Called with every detected valid frame, or null when no pose is detected and when the session ends. */
+  onLandmarks?: (frame: Frame | null) => void,
 ): LiveRecognitionState & { clearResult: () => void } {
   const [state, setState] = useState<LiveRecognitionState>(INITIAL_STATE);
   const [prevEnabled, setPrevEnabled] = useState(enabled);
@@ -57,6 +60,11 @@ export function useLiveRecognition(
     setPrevEnabled(enabled);
     setState(enabled ? { ...INITIAL_STATE, phase: 'loading' } : INITIAL_STATE);
   }
+
+  const onLandmarksRef = useRef(onLandmarks);
+  useEffect(() => {
+    onLandmarksRef.current = onLandmarks;
+  }, [onLandmarks]);
 
   /** Hides the last prediction/error; the buffer and loops keep running and the next response shows normally. */
   const clearResult = useCallback(() => {
@@ -142,6 +150,8 @@ export function useLiveRecognition(
         frame = null; // A single failed detection is treated like a missing pose.
       }
 
+      onLandmarksRef.current?.(frame);
+
       if (frame) {
         lastPoseAt = now;
         buffer.push(frame);
@@ -182,6 +192,7 @@ export function useLiveRecognition(
 
     return () => {
       cancelled = true;
+      onLandmarksRef.current?.(null);
       if (rafId !== null) cancelAnimationFrame(rafId);
       requestController?.abort();
       buffer.clear();

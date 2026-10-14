@@ -3,6 +3,9 @@ from pydantic import BaseModel
 from typing import List
 from app.services.recognition_service import RecognitionService
 
+# DD-Net resamples any sequence to frame_l (30) frames, so 30 is the smallest meaningful input.
+MIN_FRAMES = 30
+
 router = APIRouter()
 
 # Single instance initialized at startup
@@ -25,8 +28,8 @@ class RecognitionResponse(BaseModel):
 
 @router.post("/predict", response_model=RecognitionResponse)
 def predict(request: RecognitionRequest):
-    if not request.sequence or len(request.sequence) < 100:
-        raise HTTPException(status_code=422, detail="Sequence must contain at least 100 frames")
+    if not request.sequence or len(request.sequence) < MIN_FRAMES:
+        raise HTTPException(status_code=422, detail=f"Sequence must contain at least {MIN_FRAMES} frames")
     
     try:
         service = get_recognition_service()
