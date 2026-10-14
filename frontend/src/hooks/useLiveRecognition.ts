@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 import { ApiError } from '../services/apiClient';
 import { isRecognitionResponse, predictSequence, type RecognitionResponse } from '../services/recognitionService';
+import { ExpiryTimer } from '../utils/expiryTimer';
 import { PredictionGate, type PredictionNote } from '../utils/predictionGate';
 import { FrameBuffer, SEQUENCE_LENGTH, toFrame } from '../utils/poseLandmarks';
 import type { Frame } from '../services/recognitionService';
@@ -12,12 +13,14 @@ import type { Frame } from '../services/recognitionService';
  */
 const SAMPLE_INTERVAL_MS = 100;
 /** Minimum time between prediction requests once the buffer is full (and after a failure). */
-const PREDICT_INTERVAL_MS = 500;
+const PREDICT_INTERVAL_MS = 1000;
 const ERROR_RETRY_INTERVAL_MS = 3000;
 /** First request can be slow while the backend lazily loads TensorFlow and the model. */
 const REQUEST_TIMEOUT_MS = 30000;
 /** Drop the window when the pose has been missing this long, so it never mixes two unrelated moments. */
 const POSE_GAP_RESET_MS = 1500;
+/** A newly confirmed label (and its confidence) disappears this long after it was confirmed. */
+const RESULT_DISPLAY_MS = 4000;
 
 const BASE = import.meta.env.BASE_URL;
 const WASM_PATH = `${BASE}mediapipe/wasm`;
@@ -85,10 +88,12 @@ export function useLiveRecognition(
   const gateRef = useRef(new PredictionGate());
   /** Bumped whenever the gate is reset; a response requested under an older generation is stale and dropped. */
   const generationRef = useRef(0);
+  const expiryRef = useRef(new ExpiryTimer(RESULT_DISPLAY_MS));
 
   /** Hides the last prediction/error; the buffer and loops keep running and the next response shows normally. */
   const clearResult = useCallback(() => {
     gateRef.current.reset();
+    expiryRef.current.cancel();
     generationRef.current += 1;
     setState((prev) => ({ ...prev, result: null, latest: null, note: null, pendingCount: 0, error: null, latencyMs: null }));
   }, []);
@@ -97,7 +102,9 @@ export function useLiveRecognition(
     if (!enabled) return;
 
     const gate = gateRef.current;
+    const expiry = expiryRef.current;
     gate.reset();
+    expiry.cancel();
     generationRef.current += 1;
     let cancelled = false;
     let rafId: number | null = null;
@@ -146,6 +153,14 @@ export function useLiveRecognition(
           error: null,
           latencyMs: Math.round(performance.now() - startedAt),
         });
+        if (decision.newlyConfirmed) {
+          // Auto-clear this label after RESULT_DISPLAY_MS. Recognition keeps running; the gate is reset so a sign that
+          // is still being held must be confirmed again before it reappears.
+          expiry.start(() => {
+            gate.reset();
+            patch({ result: null, note: null, pendingCount: 0 });
+          });
+        }
       } catch (e) {
         if (cancelled || generation !== generationRef.current || (e instanceof DOMException && e.name === 'AbortError')) return;
         nextPredictDelay = ERROR_RETRY_INTERVAL_MS;
@@ -227,6 +242,7 @@ export function useLiveRecognition(
     return () => {
       cancelled = true;
       gate.reset();
+      expiry.cancel();
       generationRef.current += 1;
       onLandmarksRef.current?.(null);
       if (rafId !== null) cancelAnimationFrame(rafId);

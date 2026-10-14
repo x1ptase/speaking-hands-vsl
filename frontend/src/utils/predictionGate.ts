@@ -10,6 +10,8 @@ export type PredictionNote = 'uncertain' | 'unsupported' | null;
 export interface GateOutput {
   /** The response to display as the confirmed result, or null to keep the previous one. */
   confirmed: RecognitionResponse | null;
+  /** True only when a different label has just been confirmed (not when the confirmed label is refreshed). */
+  newlyConfirmed: boolean;
   note: PredictionNote;
   /** Consecutive confident predictions of the label that is waiting to be confirmed. */
   pendingCount: number;
@@ -30,16 +32,16 @@ export class PredictionGate {
 
     if (!(response.confidence >= MIN_CONFIDENCE)) {
       this.resetPending();
-      return { confirmed: null, note: 'uncertain', pendingCount: 0 };
+      return { confirmed: null, newlyConfirmed: false, note: 'uncertain', pendingCount: 0 };
     }
     if (!label) {
       this.resetPending();
-      return { confirmed: null, note: 'unsupported', pendingCount: 0 };
+      return { confirmed: null, newlyConfirmed: false, note: 'unsupported', pendingCount: 0 };
     }
     // Already-confirmed label: refresh confidence immediately, the streak requirement is for new labels.
     if (label === this.confirmedLabel) {
       this.resetPending();
-      return { confirmed: response, note: null, pendingCount: 0 };
+      return { confirmed: response, newlyConfirmed: false, note: null, pendingCount: 0 };
     }
 
     if (label === this.pendingLabel) {
@@ -51,9 +53,9 @@ export class PredictionGate {
     if (this.pendingCount >= CONFIRM_COUNT) {
       this.confirmedLabel = label;
       this.resetPending();
-      return { confirmed: response, note: null, pendingCount: 0 };
+      return { confirmed: response, newlyConfirmed: true, note: null, pendingCount: 0 };
     }
-    return { confirmed: null, note: null, pendingCount: this.pendingCount };
+    return { confirmed: null, newlyConfirmed: false, note: null, pendingCount: this.pendingCount };
   }
 
   /** Forget the confirmed label and any pending streak (camera stop/restart, cleared result). */
