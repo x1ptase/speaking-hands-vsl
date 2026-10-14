@@ -1,12 +1,21 @@
 import React from 'react';
 import { Video, Cpu, Clock, Layers } from 'lucide-react';
 import type { RecognitionStatus } from '../../hooks/useRecognition';
+import type { CameraStatus } from '../../hooks/useCamera';
 
 interface StatusBarProps {
+  cameraStatus: CameraStatus;
   status: RecognitionStatus;
   frameCount: number | null;
   latencyMs: number | null;
 }
+
+const CAMERA_STATUS: Record<CameraStatus, { text: string; dot: string }> = {
+  idle: { text: 'Off', dot: 'bg-gray-300' },
+  starting: { text: 'Starting', dot: 'bg-yellow-400' },
+  running: { text: 'Live', dot: 'bg-success' },
+  error: { text: 'Error', dot: 'bg-red-500' },
+};
 
 const MODEL_STATUS: Record<RecognitionStatus, { text: string; dot: string }> = {
   idle: { text: 'Idle', dot: 'bg-gray-300' },
@@ -16,7 +25,8 @@ const MODEL_STATUS: Record<RecognitionStatus, { text: string; dot: string }> = {
   error: { text: 'Error', dot: 'bg-red-500' },
 };
 
-export const StatusBar: React.FC<StatusBarProps> = ({ status, frameCount, latencyMs }) => {
+export const StatusBar: React.FC<StatusBarProps> = ({ cameraStatus, status, frameCount, latencyMs }) => {
+  const camera = CAMERA_STATUS[cameraStatus];
   const model = MODEL_STATUS[status];
 
   return (
@@ -25,8 +35,8 @@ export const StatusBar: React.FC<StatusBarProps> = ({ status, frameCount, latenc
         <Video className="w-4 h-4 text-secondary-text" />
         <span className="text-sm font-medium text-main-text">Camera</span>
         <span className="flex items-center gap-1.5 ml-1">
-          <span className="w-2 h-2 rounded-full bg-gray-300"></span>
-          <span className="text-xs text-secondary-text">Not enabled</span>
+          <span className={`w-2 h-2 rounded-full ${camera.dot}`}></span>
+          <span className="text-xs text-secondary-text">{camera.text}</span>
         </span>
       </div>
 

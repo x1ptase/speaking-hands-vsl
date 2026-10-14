@@ -17,8 +17,8 @@ export const SequenceUpload: React.FC<SequenceUploadProps> = ({ file, status, er
   const isLoading = status === 'loading';
 
   return (
-    <Card className="flex flex-col h-full bg-gray-50 border-dashed border-2 border-border-subtle">
-      <div className="flex-1 flex flex-col items-center justify-center min-h-[400px] sm:min-h-[500px] px-4 text-secondary-text">
+    <Card className="flex flex-col shrink-0 bg-gray-50 border-dashed border-2 border-border-subtle">
+      <div className="flex-1 flex flex-col items-center justify-center min-h-[240px] px-4 py-6 text-secondary-text">
         <FileJson className="w-16 h-16 mb-4 opacity-50" />
         <h3 className="text-xl font-medium text-main-text">Landmark Sequence</h3>
 
