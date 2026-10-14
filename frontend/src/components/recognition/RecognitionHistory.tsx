@@ -1,14 +1,14 @@
 import React from 'react';
 import { History } from 'lucide-react';
 import { Card } from '../common/Card';
+import type { HistoryEntry } from '../../hooks/useRecognition';
+import { confidenceToPercent } from '../../utils/confidence';
 
-export const RecognitionHistory: React.FC = () => {
-  const mockHistory = [
-    { id: 1, sign: "Xin chào", confidence: 96, time: "10:31:22" },
-    { id: 2, sign: "Cảm ơn", confidence: 91, time: "10:31:25" },
-    { id: 3, sign: "Xin lỗi", confidence: 94, time: "10:31:29" },
-  ];
+interface RecognitionHistoryProps {
+  history: HistoryEntry[];
+}
 
+export const RecognitionHistory: React.FC<RecognitionHistoryProps> = ({ history }) => {
   return (
     <Card className="p-6">
       <div className="flex items-center gap-2 mb-4">
@@ -26,20 +26,37 @@ export const RecognitionHistory: React.FC = () => {
             </tr>
           </thead>
           <tbody className="text-sm">
-            {mockHistory.map((item) => (
-              <tr key={item.id} className="border-b border-border-subtle last:border-0 hover:bg-gray-50 transition-colors">
-                <td className="py-3 font-medium text-main-text">{item.sign}</td>
-                <td className="py-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-16 bg-gray-200 rounded-full h-1.5 overflow-hidden">
-                      <div className="bg-primary h-1.5 rounded-full" style={{ width: `${item.confidence}%` }}></div>
-                    </div>
-                    <span className="text-secondary-text text-xs">{item.confidence}%</span>
-                  </div>
-                </td>
-                <td className="py-3 text-right text-secondary-text font-mono text-xs">{item.time}</td>
+            {history.length === 0 && (
+              <tr>
+                <td colSpan={3} className="py-6 text-center text-secondary-text">Chưa có kết quả nào.</td>
               </tr>
-            ))}
+            )}
+            {history.map((item) => {
+              const percent = confidenceToPercent(item.result.confidence);
+              return (
+                <tr key={item.id} className="border-b border-border-subtle last:border-0 hover:bg-gray-50 transition-colors">
+                  <td className="py-3 font-medium text-main-text">
+                    {item.result.label || <span className="text-secondary-text">Ký hiệu chưa được hỗ trợ</span>}
+                    <span className="ml-2 text-xs font-normal text-secondary-text font-mono">
+                      #{item.result.class_index} · {item.fileName}
+                    </span>
+                  </td>
+                  <td className="py-3">
+                    {percent !== null ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-16 bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                          <div className="bg-primary h-1.5 rounded-full" style={{ width: `${percent}%` }}></div>
+                        </div>
+                        <span className="text-secondary-text text-xs">{percent}%</span>
+                      </div>
+                    ) : (
+                      <span className="text-secondary-text text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="py-3 text-right text-secondary-text font-mono text-xs">{item.time}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
